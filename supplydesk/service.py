@@ -8,6 +8,15 @@ FREE_DELIVERY_THRESHOLD_CENTS = 10000
 STANDARD_DELIVERY_FEE_CENTS = 600
 
 
+def delivery_fee(fulfillment, net_cents):
+    """Calculate the delivery fee based on fulfillment type and net total."""
+    if fulfillment == "pickup":
+        return 0
+    if fulfillment == "delivery":
+        return 0 if net_cents >= FREE_DELIVERY_THRESHOLD_CENTS else STANDARD_DELIVERY_FEE_CENTS
+    raise ValueError("Fulfillment must be pickup or delivery.")
+
+
 class OrderService:
     def __init__(self, state_path=".supplydesk/state.json"):
         self.store = JsonStore(state_path)
@@ -58,9 +67,8 @@ class OrderService:
         if customer_type == "student" and subtotal > STUDENT_DISCOUNT_THRESHOLD_CENTS:
             discount = (subtotal * STUDENT_DISCOUNT_PERCENT + 50) // 100
             
-        delivery = 0
-        if fulfillment == "delivery" and subtotal - discount < FREE_DELIVERY_THRESHOLD_CENTS:
-            delivery = STANDARD_DELIVERY_FEE_CENTS
+        # Use the new helper function
+        delivery = delivery_fee(fulfillment, subtotal - discount)
             
         return {
             "items": lines,
