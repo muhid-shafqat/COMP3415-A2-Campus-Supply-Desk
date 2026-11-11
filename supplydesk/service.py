@@ -2,6 +2,11 @@
 
 from supplydesk.storage import JsonStore
 
+STUDENT_DISCOUNT_THRESHOLD_CENTS = 5000
+STUDENT_DISCOUNT_PERCENT = 10
+FREE_DELIVERY_THRESHOLD_CENTS = 10000
+STANDARD_DELIVERY_FEE_CENTS = 600
+
 
 class OrderService:
     def __init__(self, state_path=".supplydesk/state.json"):
@@ -49,12 +54,13 @@ class OrderService:
             })
             
         discount = 0
-        if customer_type == "student" and subtotal > 5000:
-            discount = (subtotal * 10 + 50) // 100
+        # Note: The bug is intentionally preserved here (using > instead of >=)
+        if customer_type == "student" and subtotal > STUDENT_DISCOUNT_THRESHOLD_CENTS:
+            discount = (subtotal * STUDENT_DISCOUNT_PERCENT + 50) // 100
             
         delivery = 0
-        if fulfillment == "delivery" and subtotal - discount < 10000:
-            delivery = 600
+        if fulfillment == "delivery" and subtotal - discount < FREE_DELIVERY_THRESHOLD_CENTS:
+            delivery = STANDARD_DELIVERY_FEE_CENTS
             
         return {
             "items": lines,
