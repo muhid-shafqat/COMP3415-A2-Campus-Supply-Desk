@@ -38,17 +38,14 @@ class OrderBehaviorTests(unittest.TestCase):
 
     # ---------- Boundary behavior ----------
     def test_delivery_free_at_threshold(self):
-        # 3 hoodies = 12000 subtotal; net (no discount) = 12000 >= 10000 -> free
         q = self.service.quote("regular", [{"product_id": "hoodie", "quantity": 3}], "delivery")
         self.assertEqual(q["delivery_cents"], 0)
         self.assertEqual(q["total_cents"], 12000)
 
     def test_student_discount_exactly_at_threshold(self):
-        # Spec says "at least 5000" -> 2 bags = 5000. Code uses "> 5000" -> likely 0.
-        # Do NOT change expected value; document as a defect.
         q = self.service.quote("student", [{"product_id": "bag", "quantity": 2}])
         self.assertEqual(q["subtotal_cents"], 5000)
-        self.assertEqual(q["discount_cents"], 500)  # Expected per spec; may fail -> document
+        self.assertEqual(q["discount_cents"], 500)
 
     def test_quantity_lower_bound_one(self):
         q = self.service.quote("regular", [{"product_id": "mug", "quantity": 1}])
@@ -127,6 +124,44 @@ class OrderBehaviorTests(unittest.TestCase):
         o = self.service.place_order("regular", [{"product_id": "mug", "quantity": 1}])
         reopened = OrderService(self.path).get_order(o["order_id"])
         self.assertEqual(reopened, o)
+
+
+class ExpressDeliveryTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.path = Path(self.directory.name) / "state.json"
+        self.service = OrderService(self.path)
+
+    def test_express_regular_two_notebooks(self):
+        q = self.service.quote("regular", [{"product_id": "notebook", "quantity": 2}], "express")
+        self.assertEqual((q["delivery_cents"], q["total_cents"]), (1200, 2200))
+
+    def test_express_student_two_hoodies(self):
+        q = self.service.quote("student", [{"product_id": "hoodie", "quantity": 2}], "express")
+        self.assertEqual((q["discount_cents"], q["delivery_cents"], q["total_cents"]), (800, 1200, 8400))
+
+    def test_express_never_waived_above_standard_threshold(self):
+        q = self.service.quote("regular", [{"product_id": "hoodie", "quantity": 3}], "express")
+        self.assertEqual((q["delivery_cents"], q["total_cents"]), (1200, 13200))
+
+    def test_express_order_matches_quote_and_survives_reload(self):
+        items = [{"product_id": "hoodie", "quantity": 2}]
+        q = self.service.quote("student", items, "express")
+        o = self.service.place_order("student", items, "express")
+        for key in ("fulfillment", "items", "discount_cents", "delivery_cents", "total_cents"):
+            self.assertEqual(q[key], o[key], f"mismatch on {key}")
+        reopened = OrderService(self.path).get_order(o["order_id"])
+        self.assertEqual(reopened, o)
+
+    def test_express_cancel_restores_stock_and_keeps_record(self):
+        before = self.service.catalog()
+        o = self.service.place_order("regular", [{"product_id": "mug", "quantity": 1}], "express")
+        c = self.service.cancel_order(o["order_id"])
+        self.assertEqual(c["status"], "cancelled")
+        self.assertEqual(c["fulfillment"], "express")
+        self.assertEqual(c["delivery_cents"], 1200)
+        self.assertEqual(self.service.catalog(), before)
 
 
 if __name__ == "__main__":
